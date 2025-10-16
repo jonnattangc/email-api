@@ -6,6 +6,7 @@ try:
     import time
     import base64
     import uuid
+    import requests
     import imaplib
     import email
     import json
@@ -15,6 +16,7 @@ try:
     import psutil
     import gc
     from Cipher import Cipher
+    from TrxModel import TrxModel
 
 except ImportError:
     logging.error(ImportError)
@@ -30,12 +32,17 @@ def message_process( json_data, path : str, client ) :
         logging.info(name_thread + "After start thread memory: " + str(mem_info.rss))
         success: bool = False
         try :
-            if path.find('process') >= 0 :    
+            if path.find('news') >= 0 :    
                 util_email : UtilEmail = UtilEmail()
-                data = util_email.read_and_save()
+                mails = util_email.read_email('Bancos')
                 del util_email
-                logging.info(name_thread + 'Data read: ' + str(data))
-                if data != None :
+                processor = TrxModel()
+                news : list = processor.evaluate_and_save(mails)
+                del processor
+                logging.info(name_thread + 'A Notificar: ' + str(len(news)) + ' Entradas de dinero')
+                if news != None :
+                    for new in news :
+                        notify_wathsapp(new)
                     success = True
             else :
                 success = False
@@ -54,6 +61,35 @@ def message_process( json_data, path : str, client ) :
             logging.error(name_thread + 'ha terminado con falla...')
 
         return success
+
+def notify_wathsapp( data_mail : dict ) :
+    url = os.environ.get('NOTIFICATION_URL','None')
+    apikey = os.environ.get('NOTIFICATION_APIKEY','None')
+    phone = os.environ.get('PHONE','None')
+    if url != None and apikey != None :
+        headers = {
+            'x-api-key' : apikey,
+        }
+
+        msg : str = ''
+        try : 
+            msg = data_mail['text_email']
+            msg = msg.replace(' ','').strip()
+        except Exception as e :
+            msg = 'sin informción adicional'
+
+        data = {
+            "type": "clear",
+            "to" : phone,
+            "subject":"Tesorero 2°A",
+            "body": msg
+        }
+
+        try:
+            r = requests.post(url, json=data, headers=headers, hooks=None, timeout=5 )
+            logging.info("Response: " + str(r.text) )
+        except Exception as e:
+            logging.error("Error: " + str(e) )
 
 class UtilEmail():
     th = None
@@ -159,7 +195,7 @@ class UtilEmail():
             else: 
                     json_data = data_rx
 
-            if path.find('process') >= 0 :    
+            if path.find('news') >= 0 :    
                 self.th = threading.Thread(target=message_process, args=( json_data, path, client ), name='th')
                 self.th.start()
             elif path.find('search') >= 0 :
@@ -176,96 +212,50 @@ class UtilEmail():
             http_code = 404
         return  data_response, http_code
 
-    def read_and_save(self, ) :
-            data_rx = {
-                "status" : "Ok",
-                "transfers" : None
-            }
-            transfers = []
+    def read_email(self, filter: str) :
+            transfers : list = []
             try:
                 # Conexión al servidor IMAP de Gmail
                 imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
                 logging.info("Conectando al servidor IMAP...")
-
                 # Iniciar sesi'on
                 imap.login(self.user, self.password)
                 logging.info("Sesión iniciada con éxito.")
-
                 # Seleccionar la bandeja de entrada (Inbox)
-                imap.select("Bancos")
+                imap.select(filter)
                 logging.info("Bandeja de entrada seleccionada.")
-
                 # Buscar todos los correos en la bandeja
                 status, messages = imap.search(None, '(FROM "no-reply@tenpo.cl")')
                 if str(status) != 'OK':
                     logging.error("Error al buscar correos.")
-                    return data_rx
+                    return transfers
                 # El resultado 'messages' es una lista de IDs de correos
                 message_ids = messages[0].split()
                 logging.info(f"Total de correos encontrados: {len(message_ids)}")
-                # Leer los 5 correos más recientes (los IDs vienen en orden ascendente)
                 count = 0
-                for msg_id in message_ids[-2000:]:
+                for msg_id in message_ids :
                     status_mail, data = imap.fetch(msg_id, "(RFC822)")
-                    #logging.info("=============================== [" + str(msg_id) + "] " + str(status_mail) + " ===============================")
                     if str(status_mail) != 'OK':
                         logging.error(f"Error al obtener el correo con ID {msg_id}.")
                         continue
-                    # logging.info("Data:" + str(data))
                     raw_email = data[0][1]
-                    email_message = email.message_from_bytes(raw_email)
-                    
-                    sender : str = ''
-                    if email_message["Sender"] != None :
-                        sender = str(email_message["Sender"])
-                    else :
-                        sender = sender + ' ' + str(email_message["From"])
-                    subject : str = ''
-                    if email_message["Subject"] != None :
-                        subject = str(email_message["Subject"])
-                    
-                    #logging.info("From: " + str(email_message["From"]))
-                    if sender.find('no-reply@tenpo.cl') >= 0 and subject.find('Comprobante de transferencia - Tenpo') >= 0 :
-                        pos_ini : int = str(email_message).find('>La transferencia de ') + 1
-                        pos_end : int = str(email_message).find('fue exitosa') + 11
-                        if pos_ini < 0 or pos_end < 0 :
-                            continue
-                        if pos_end <= pos_ini :
-                            continue
-                        text : str = str(email_message)[pos_ini:pos_end]
-                        pos_ini : int = str(email_message).find('Monto transferencia:')
-                        pos_end : int = str(email_message).find('digo de transferencia:') + 35
-                        textw : str = str(email_message)[pos_ini:pos_end]
-                        text = text + '. ' + textw
-                        text = text.replace('\n\n', ',').replace('\n', ',').replace('\t', ' ')
-                        text = text.replace(',,', ',').replace(':,', ': ')
-                        text = text.replace('N=C2=BA', 'Número').replace(',', ', ').replace('C=C3=B3', 'Có')
-                        text = text.replace('=,', ',')
-                        #logging.info('[' + str(text) + ']')
-                        if text != None :
-                            count = count + 1
-                            transfer = {
-                                "msg_id" : str(email_message["Message-ID"]),
-                                "date" : str(email_message["Date"]),
-                                "from" : str(sender),
-                                "subject" : str(subject)
-                            }
-                            datos = text.strip().split(', ') 
-                            for dato in datos :
-                                values = dato.split(': ')
-                                if len(values) == 2 :
-                                    key : str = values[0].lower().replace('a tu cuenta tenpo fue exitosa. ', '')
-                                    key = key.replace('ó', 'o').replace('é', 'e').replace('í', 'i').replace('á', 'a').replace('ú', 'u')
-                                    transfer[key] = values[1]
-                            transfers.append( transfer )
-                            logging.info("Count [" + str(count) + "] " )
+                    email_message : email.message.EmailMessage = email.message_from_bytes(raw_email)
+                    if str(email_message['Subject']).find('Comprobante de transferencia') >= 0 :
+                        transfers.append(
+                            {   
+                                "subject" : str(email_message['Subject']),
+                                "id" : str(email_message["Message-ID"]),
+                                "from" : str(email_message['From']),
+                                "to" : str(email_message['To']),
+                                "date" : str(email_message['Date']),
+                                "email" : email_message.as_string()
+                            })
+                        count = count + 1
                 # Cerrar la conexión
                 imap.close()
                 imap.logout()
-                logging.info("Conexión cerrada. Count: " + str(count) )
+                logging.info("Conexión cerrada. Procesados: " + str(count) )
             except Exception as e:
                 logging.error("Ocurrió un error", e)
                 transfers = []
-                data_rx['status'] = "Error: " + str(e)
-            data_rx['transfers'] = transfers
-            return data_rx
+            return transfers
