@@ -11,7 +11,7 @@ try:
     import email
     import json
     import pymysql.cursors
-    from datetime import datetime
+    from datetime import datetime, timedelta
     import threading
     import psutil
     import gc
@@ -39,7 +39,7 @@ def message_process( json_data, path : str, client ) :
                 processor = TrxModel()
                 news : list = processor.evaluate_and_save(mails)
                 del processor
-                logging.info(name_thread + 'A Notificar: ' + str(len(news)) + ' Entradas de dinero')
+                logging.info(name_thread + 'Nuevas entradas de dinero para notificar: ' + str(len(news)) )
                 if news != None :
                     for new in news :
                         notify_wathsapp(new)
@@ -69,24 +69,28 @@ def notify_wathsapp( data_mail : dict ) :
     if url != None and apikey != None :
         headers = {
             'x-api-key' : apikey,
+            'Content-Type': 'application/json'
         }
-
         msg : str = ''
         try : 
-            msg = data_mail['text_email']
-            msg = msg.replace(' ','').strip()
+            msg = str(data_mail['name_origen']).strip()
+            msg = msg + ' transfire $' + str(data_mail['amount']).strip()
+            msg = msg + ' desde ' + str(data_mail['bank_origin']).strip()
+            msg = msg + ' el ' + str(data_mail['date_trx']).strip()
         except Exception as e :
             msg = 'sin informción adicional'
 
         data = {
             "type": "clear",
-            "to" : phone,
-            "subject":"Tesorero 2°A",
-            "body": msg
+            "data" : {
+                "to" : str(phone),
+                "subject":"Tesorero",
+                "body": str(msg)
+            }
         }
-
+        logging.info("Request: " + str(data) )
         try:
-            r = requests.post(url, json=data, headers=headers, hooks=None, timeout=5 )
+            r = requests.post(url,  data = json.dumps(data), headers=headers, timeout=30 )
             logging.info("Response: " + str(r.text) )
         except Exception as e:
             logging.error("Error: " + str(e) )
@@ -223,9 +227,12 @@ class UtilEmail():
                 logging.info("Sesión iniciada con éxito.")
                 # Seleccionar la bandeja de entrada (Inbox)
                 imap.select(filter)
-                logging.info("Bandeja de entrada seleccionada.")
-                # Buscar todos los correos en la bandeja
-                status, messages = imap.search(None, '(FROM "no-reply@tenpo.cl")')
+                logging.info("Bandeja de entrada seleccionada: " + filter)
+                date_search : datetime = datetime.now() - timedelta(days=1)
+                date_search_str : str = date_search.strftime('%d-%b-%Y')
+                logging.info(f"Fecha busqueada: {date_search_str}")
+                # Buscar todos los correos en la bandeja desde la fecha especificada y en la categoría "no-reply@tenpo.cl"
+                status, messages = imap.search(None, '(FROM "no-reply@tenpo.cl")', '(SINCE "' + date_search_str + '")')
                 if str(status) != 'OK':
                     logging.error("Error al buscar correos.")
                     return transfers
@@ -240,21 +247,23 @@ class UtilEmail():
                         continue
                     raw_email = data[0][1]
                     email_message : email.message.EmailMessage = email.message_from_bytes(raw_email)
-                    if str(email_message['Subject']).find('Comprobante de transferencia') >= 0 :
+                    subject : str = str(email_message['Subject']).lower().strip()
+                    if subject.find('comprobante de transferencia') >= 0 :
                         transfers.append(
                             {   
-                                "subject" : str(email_message['Subject']),
+                                "subject" : str(subject),
                                 "id" : str(email_message["Message-ID"]),
                                 "from" : str(email_message['From']),
                                 "to" : str(email_message['To']),
                                 "date" : str(email_message['Date']),
-                                "email" : email_message.as_string()
+                                "email" : email_message.as_string(unixfrom=False)
                             })
                         count = count + 1
                 # Cerrar la conexión
                 imap.close()
                 imap.logout()
-                logging.info("Conexión cerrada. Procesados: " + str(count) )
+                logging.info("Habilitados para ser procesados: " + str(count) )
+                logging.info("Cierre de la conexión con el servidor IMAP" )
             except Exception as e:
                 logging.error("Ocurrió un error", e)
                 transfers = []
