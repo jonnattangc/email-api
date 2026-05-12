@@ -6,7 +6,7 @@ try:
     import os
     from flask import Flask, jsonify, redirect, send_from_directory, request, render_template
     from flask_cors import CORS
-    from Utilemail import UtilEmail
+    from util_email import UtilEmail
 except ImportError:
     logging.error(ImportError)
     print((os.linesep * 2).join(['Error al buscar los modulos:', str(sys.exc_info()[1]), 'Debes Instalarlos para continuar', 'Deteniendo...']))
