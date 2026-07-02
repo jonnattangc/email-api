@@ -104,7 +104,7 @@ class TrxTesoreria(AModel):
             id_msg = str(message['id'])
             id_msg = id_msg.replace('<-', '').replace('<', '').replace('>', '')
 
-            if sender.find('no-reply@tenpo.cl') >= 0 and subject.find('comprobante de transferencia') >= 0 :
+            if sender.find('no-reply@tenpo.cl') >= 0 and subject.find('comprobante de transferencia') >= 0 and subject.find('exitoso') < 0 :
                 email_message :str = str(message['email'])
                 data : bytes = email_message.encode('utf-8')
                 md5_hash : str = hashlib.md5(data).hexdigest()
