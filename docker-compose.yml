@@ -1,19 +1,19 @@
 services:
     email-service:
       container_name: email-service
-      image: email-service:dev
+      image: jonnattangc/emailservice:1.0.5
       build:
         context: .
         dockerfile: Dockerfile
       restart: none
-      volumes:
-        - ./app:/home/jonnattan/app
+      #volumes:
+      #  - ./app:/home/jonnattan/app
       ports:
         - "8070:8070"
       env_file:
         - ../envs/email_api.env
       networks:
         - db-net
-      command: tail -f /home/jonnattan/requirements.txt
+      #command: tail -f /home/jonnattan/requirements.txt
 networks:
   db-net:

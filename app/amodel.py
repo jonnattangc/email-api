@@ -138,6 +138,7 @@ class AModel(ABC):
         amount : str = ''
         name_origin : str = ''
         rut_origin : str = ''
+        tipo_movimiento : str = ''
         client_id : str = str(self.client["id"])
 
         name_thread = '[' + threading.current_thread().name + '-' + str(threading.get_native_id()) + '] '
@@ -217,19 +218,29 @@ class AModel(ABC):
                 msg_id = '-1'
                 tmp = None
 
+            try : 
+                tmp = trx["tipo_movimiento"]
+                if tmp != None and len(tmp) > 0 :
+                    tmp = tmp.replace(' ','').replace('.','').replace(',','').replace('$','').replace(' ','').strip()
+                    tipo_movimiento = tmp.lower()
+                    tmp = None
+            except Exception as e :
+                tipo_movimiento = 'rx'
+                tmp = None
+
             trx_date : str = fecha + ' ' + hora
             date_trx : datetime = datetime.strptime(trx_date, "%d-%m-%Y %H:%M:%S")
             date_now = datetime.now()
 
             sql = """INSERT INTO Trx (created_at, metadata, name_origen, rut_origen, account_number_origin, bank_origin,
-              amount, comment, id_bank_destination, id_msg, id_bank_origin, date_trx, md5sum, client_id) 
-              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+              amount, comment, id_bank_destination, id_msg, id_bank_origin, date_trx, md5sum, client_id, trx_type) 
+              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
             
             cursor = self.db.cursor()
 
             cursor.execute(sql, (date_now.strftime('%Y-%m-%d %H:%M:%S'), data_json, name_origin, rut_origin,trx["numero_cuenta_de_origen"], trx["banco_de_origen"], 
                                  amount, trx["comment"].lower(), trx_code, msg_id, '-1',
-                                 date_trx.strftime('%Y-%m-%d %H:%M:%S'), trx["md5sum"].lower(), client_id))
+                                 date_trx.strftime('%Y-%m-%d %H:%M:%S'), trx["md5sum"].lower(), client_id, tipo_movimiento))
             self.db.commit()
             logging.info(name_thread + 'Datos Guardados')
         except Exception as e :
