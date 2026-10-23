@@ -104,7 +104,7 @@ class TrxTesoreria(AModel):
             id_msg = str(message['id'])
             id_msg = id_msg.replace('<-', '').replace('<', '').replace('>', '')
 
-            if sender.find('no-reply@tenpo.cl') >= 0 and subject.find('comprobante de transferencia') >= 0 and subject.find('exitoso') < 0 :
+            if sender.find('no-reply@tenpo.cl') >= 0 and subject.find('comprobante de transferencia') >= 0 : # and subject.find('exitoso') < 0 :
                 email_message :str = str(message['email'])
                 data : bytes = email_message.encode('utf-8')
                 md5_hash : str = hashlib.md5(data).hexdigest()
@@ -118,20 +118,23 @@ class TrxTesoreria(AModel):
                 email_message = unicodedata.normalize('NFC', email_message)
                 logging.info(f"{th} Processing id {id_msg} md5: {md5_hash} from: {sender} subject: {subject}")
 
-                msg : str = 'El siguiente texto es el cuerpo de un correo electronico que contiene información de una transferencia bancaria recibida:'
+                msg : str = 'El siguiente texto es el cuerpo de un correo electronico que contiene información de una transferencia bancaria recibida o enviada:'
                 msg += email_message
-                msg += '. del texto necesito capturar el origen, destino, monto, banco orrigen y fecha de la transferencia. '
+                msg += '. del texto necesito capturar el origen, destino, monto, banco de origen y fecha de la transferencia. '
                 msg += ' y que toda la información me la entregue en el formato JSON puro considerando los tildes y sin ninguna etiqueta markdown y con las claves de JSON siguientes:'
                 msg += ' nombre origen como origen_transferencia, el rut como rut_de_origen, banco de origen como banco_de_origen, número de cuenta origen como numero_cuenta_de_origen, monto como monto_transferencia, fecha como fecha,'
-                msg += ' hora como hora, codigo de transferecia como codigo_transferencia y comentario como comment'
+                msg += ' hora como hora, codigo de transferecia como codigo_transferencia, comentario como comment y tipo de movimiento como tipo_movimiento que sea enviada o recibida.'
+                msg += ' El origen, destino como son nombres necesito que los entregues con Nombre y Apellido separados por un espacio y la Primera letra en mayúscula'
 
                 data = {
                     "type": "clear",
                     "data" : {
                         "prompt" : str(msg),
-                        "assistantType": "Eres un asisente que lee correo electronicos de transferencias recibidas"
+                        "assistantType": "Eres un asistente que lee correo electronicos de transferencias recibidas y enviadas"
                     }
                 }
+                
+                logging.info(f"{th} POST URL: {self.llm_api}" )
                 
                 r = requests.post(self.llm_api,  data = json.dumps(data), headers=self.headers, timeout=30 )
         
